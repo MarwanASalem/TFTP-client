@@ -76,7 +76,7 @@ class TftpProcessor(object):
             block = block[0]
             list.append(block)
             pass
-        elif opcode = DATA:
+        elif opcode == DATA:
             block = struct.unpack('!H',packet_bytes[2:4])
             block = block[0]
             list.append(block)
@@ -114,7 +114,7 @@ class TftpProcessor(object):
         pass
 
     def _errors(self,input_packet):
-
+        
         pass
 
     def get_next_output_packet(self):
