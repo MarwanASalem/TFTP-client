@@ -47,6 +47,7 @@ class TftpProcessor(object):
         Here's an example of what you can do inside this function.
         """
         self.packet_buffer = []
+        filename =''
         pass
 
     def process_udp_packet(self, packet_data, packet_source):
@@ -58,15 +59,15 @@ class TftpProcessor(object):
         print(f"Received a packet from {packet_source}")
         in_packet = self._parse_udp_packet(packet_data)
         out_packet = self._do_some_logic(in_packet)
-
-        self.packet_buffer.append(out_packet)
+        if out_packet != None:
+            self.packet_buffer.append(out_packet)
 
     def _parse_udp_packet(self, packet_bytes):
         """
         You'll use the struct module here to determine
         the type of the packet and extract other available
         information.
-        """ 
+        """
         list = []
         opcode = struct.unpack('!H',packet_bytes[0:2])
         opcode = opcode[0]
@@ -75,40 +76,52 @@ class TftpProcessor(object):
             l = packet_bytes[2:].split('0')
             list.append(l[1])
             list.append(l[2])
+            print("Wrong")
         elif opcode == 4:
             block = struct.unpack('!H',packet_bytes[2:4])
             block = block[0]
             list.append(block)
+            print("ACK received")
             pass
         elif opcode == 3:
+            print("1")
             block = struct.unpack('!H',packet_bytes[2:4])
             block = block[0]
             list.append(block)
-            data = struct.unpack('!s',packet_bytes[4:])
+            data = packet_bytes[4:]
             list.append(data)
+            print("Data received")
             pass
         elif opcode == 5:
             ErrorCode = struct.unpack('!H',packet_bytes[2:4])
             ErrorCode = ErrorCode[0]
             list.append(ErrorCode)
-            ErrMsg = struct.unpack('!s',packet_bytes[4:])
+            print("error")
+            ErrMsg = struct.unpack('!'+str(len(packet_bytes[4:0]))+'s',packet_bytes[4:])
             ErrMsg = ErrMsg[0]
+            print(ErrMsg)
             list.append(ErrMsg)
             pass
-         
+
         return list
 
     def _do_some_logic(self, input_packet):
         if input_packet[0] == 3:
             lastPacket = generate_ack(input_packet[1])
-            #write data in file
+            data_in_bytes = input_packet[2]
+            write_to_file(self.filename,data_in_bytes,input_packet[1]+1)
             return lastPacket
         elif input_packet[0] == 4:
-            #data = readfile
-            #lastPacket = generate_data(input_packet[1],data)
-            return lastPacket
+            counter = input_packet[1]
+            print(counter)
+            data = read_from_file(self.filename,counter)
+            if len(data) == 0:
+                return None
+            else:
+                lastPacket = generate_data(input_packet[1]+1,data)
+                return lastPacket
         elif input_packet[0] == 5:
-            print ("Error: " + input_packet[2])
+#            print ("Error: " + input_packet[2])
             return None
         else:
             return None
@@ -184,6 +197,21 @@ def check_file_name():
         print(f"[WARN] File name is invalid [{script_name}]")
     pass
 
+def write_to_file(filename,data_in_bytes,counter):
+    if counter == 1:
+        newfile=open(filename,'wb')
+        newfile.write(data_in_bytes)
+    else:
+        newfile=open(filename,'ab')
+        newfile.write(data_in_bytes)
+    pass
+
+def read_from_file(filename,counter):
+    file_to_read = open( filename ,"rb")
+    file_to_read.seek(512*counter)
+    data_read = file_to_read.read(512)
+    return data_read
+
 
 def setup_sockets(address):
     """
@@ -191,40 +219,56 @@ def setup_sockets(address):
     class. It knows nothing about the sockets.
 
     Feel free to delete this function.
-    """    
+    """
     if sys.argv[2] == 'pull':
         writerequest = generate_RRQ(sys.argv[3])
         print("reading")
-        download(writerequest,address)
-    elif sys.argv[2] == 'push':
+        download(writerequest,address,sys.argv[3])
+    elif sys.argv[2] == 'push' and os.path.isfile(sys.argv[3]):
         readrequest = generate_WRQ(sys.argv[3])
         print("writing")
-        upload(readrequest,address)
+        upload(readrequest,address,sys.argv[3])
     else:
         print('ERROR')
     pass
 
-def download(writerequest,address):
+def download(writerequest,address,filename):
     cSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    cSocket.bind((address,2000))
     cSocket.sendto(writerequest, (address,69))
+    print("Downloading")
     process = TftpProcessor()
+    process.filename = filename
+    print("process.filename")
     while True:
         data,server = cSocket.recvfrom(1024)
         process.process_udp_packet(data,server)
         if process.has_pending_packets_to_be_sent():
             temp = process.get_next_output_packet()
-            cSocket.sendto(temp,address)
+            cSocket.sendto(temp,('127.0.0.1',69))
             pass
         else:
             break
-        if (len(temp) < 512):
+        if (len(data) < 512):
             print ("last block")
             break
-
     pass
 
-def upload(readrequest,address):
-
+def upload(readrequest,address,filename):
+    cSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    cSocket.sendto(readrequest, (address,69))
+    print("Uploading")
+    process = TftpProcessor()
+    process.filename = filename
+    while True:
+        data,server = cSocket.recvfrom(1024)
+        process.process_udp_packet(data,server)
+        if process.has_pending_packets_to_be_sent():
+            temp = process.get_next_output_packet()
+            cSocket.sendto(temp,('127.0.0.1',69))
+            pass
+        else:
+            break
     pass
 
 def do_socket_logic():
@@ -234,7 +278,7 @@ def do_socket_logic():
 
     Feel free to delete this function.
     """
-    
+
     pass
 
 
